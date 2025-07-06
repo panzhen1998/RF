@@ -121,72 +121,46 @@ import numpy as np
 import pandas as pd
 import shap
 import matplotlib.pyplot as plt
-# Load the model
-model = joblib.load('XGBoost.pkl')
-# Define feature options
-N_options = {    
-    0: 'No lymph node metastasis (0)',    
-    1: 'Lymph node metastasis (1)'    
-}
-T_options = {    
-    1: 'cT1 (1)',    
-    2: 'cT2 (2)',
-    3: 'cT3 (3)',    
-    4: 'cT4 (4)'
-}
-SINIT_options = {    
-    1: 'SINIT1 (1)',    
-    2: 'SINIT2 (2)',
-    3: 'SINIT3 (3)'
-}
-# Define feature names
-feature_names = [   
-    "SINIT", "N", "SIZE", "T"
-]
-# Streamlit user interface
+import os
+
+# 加载模型（确保路径正确）
+model_path = os.path.join(os.path.dirname(__file__), 'XGBoost.pkl')
+model = joblib.load(model_path)
+
+# 定义选项和特征
+N_options = {0: 'No lymph node metastasis (0)', 1: 'Lymph node metastasis (1)'}
+T_options = {1: 'cT1 (1)', 2: 'cT2 (2)', 3: 'cT3 (3)', 4: 'cT4 (4)'}
+SINIT_options = {1: 'SINIT1 (1)', 2: 'SINIT2 (2)', 3: 'SINIT3 (3)'}
+feature_names = ["SINIT", "N", "SIZE", "T"]
+
+# Streamlit 界面
 st.title("LARC Disease Predictor")
-# age: numerical input
 SIZE = st.number_input("Tumor size", min_value=0.1, max_value=10.0, value=0.1)
-N = st.selectbox("cN (0=No lymph node metastasis, 1=Lymph node metastasis):", options=[0, 1], format_func=lambda x: 'No lymph node metastasis(0)' if x == 0 else 'Lymph node metastasis (1)')
-T = st.selectbox("cT (1=cT1, 2=cT2, 3=cT3, 4=cT4):", options=list(T_options.keys()), format_func=lambda x: T_options[x])
-SINIT = st.selectbox(
-    "SINIT (1=SINIT1, 2=SINIT2, 3=SINIT3):", 
-    options=list(SINIT_options.keys()), 
-    format_func=lambda x: SINIT_options[x]  # ✅ 直接返回，不赋值
-)
-# Process inputs and make predictions
-feature_values = [SINIT, N, T, SIZE]
-features = np.array([feature_values])
-if st.button("Predict"):    
-    # Predict class and probabilities    
-    predicted_class = model.predict(features)[0]    
-    predicted_proba = model.predict_proba(features)[0]
-    # Display prediction results    
-    st.write(f"**Predicted Class:** {predicted_class}")    
-    st.write(f"**Prediction Probabilities:** {predicted_proba}")
-    # Generate advice based on prediction results    
-    probability = predicted_proba[predicted_class] * 100
-    if predicted_class == 1:        
-        advice = (            
-            #f"According to our model, you have a high risk of heart disease. "            
-            f"The model predicts that your probability of having early recurrence is {probability:.1f}%. "            
-       # "While this is just an estimate, it suggests that you may be at significant risk. "            
-        #"I recommend that you consult a cardiologist as soon as possible for further evaluation and "            
-        #"to ensure you receive an accurate diagnosis and necessary treatment."        
-        )    
-    else:        
-        advice = (            
-            #f"According to our model, you have a low risk of heart disease. "            
-            f"The model predicts that your probability of not having early recurrence is {probability:.1f}%. "            
-        #"However, maintaining a healthy lifestyle is still very important. "            
-        #"I recommend regular check-ups to monitor your heart health, "            
-        #"and to seek medical advice promptly if you experience any symptoms."        
-        )
-    st.write(advice)
-    # Calculate SHAP values and display force plot    
-    explainer = shap.TreeExplainer(model)    
-    shap_values = explainer.shap_values(pd.DataFrame([feature_values], columns=feature_names))
-    shap.force_plot(explainer.expected_value, shap_values[0], pd.DataFrame([feature_values], columns=feature_names), matplotlib=True)    
-    plt.savefig("shap_force_plot.png", bbox_inches='tight', dpi=1200)
-    st.image("shap_force_plot.png")
+N = st.selectbox("cN status:", options=[0, 1], format_func=lambda x: N_options[x])
+T = st.selectbox("cT stage:", options=list(T_options.keys()), format_func=lambda x: T_options[x])
+SINIT = st.selectbox("SINIT:", options=list(SINIT_options.keys()), format_func=lambda x: SINIT_options[x])
+
+# 预测逻辑
+if st.button("Predict"):
+    try:
+        # 转换为 DataFrame 确保格式匹配
+        features = pd.DataFrame([[SINIT, N, T, SIZE]], columns=feature_names)
+        predicted_class = model.predict(features)[0]
+        predicted_proba = model.predict_proba(features)[0]
+        
+        # 显示结果
+        st.write(f"**Predicted Class:** {predicted_class}")
+        st.write(f"**Probability:** {predicted_proba[predicted_class]:.1%}")
+        
+        # SHAP 可视化（改用 summary_plot 更稳定）
+        explainer = shap.TreeExplainer(model)
+        shap_values = explainer.shap_values(features)
+        
+        st.subheader("Feature Importance (SHAP)")
+        fig, ax = plt.subplots()
+        shap.summary_plot(shap_values, features, plot_type="bar", show=False)
+        st.pyplot(fig)
+        
+    except Exception as e:
+        st.error(f"Error: {str(e)}")
 
