@@ -117,50 +117,70 @@ joblib.dump(best_model, 'XGBoost.pkl')
 
 import streamlit as st
 import joblib
-import numpy as np
 import pandas as pd
 import shap
 import matplotlib.pyplot as plt
 import os
 
-# 加载模型（确保路径正确）
-model_path = os.path.join(os.path.dirname(__file__), 'XGBoost.pkl')
-model = joblib.load(model_path)
+# --- 1. 确保模型加载正确 ---
+try:
+    model_path = os.path.join(os.path.dirname(__file__), 'XGBoost.pkl')
+    model = joblib.load(model_path)
+except Exception as e:
+    st.error(f"模型加载失败: {str(e)}")
+    st.stop()
 
-# 定义选项和特征
-N_options = {0: 'No lymph node metastasis (0)', 1: 'Lymph node metastasis (1)'}
-T_options = {1: 'cT1 (1)', 2: 'cT2 (2)', 3: 'cT3 (3)', 4: 'cT4 (4)'}
-SINIT_options = {1: 'SINIT1 (1)', 2: 'SINIT2 (2)', 3: 'SINIT3 (3)'}
-feature_names = ["SINIT", "N", "SIZE", "T"]
-
-# Streamlit 界面
+# --- 2. 定义界面元素（保持与训练时相同的特征顺序）---
 st.title("LARC Disease Predictor")
-SIZE = st.number_input("Tumor size", min_value=0.1, max_value=10.0, value=0.1)
-N = st.selectbox("cN status:", options=[0, 1], format_func=lambda x: N_options[x])
-T = st.selectbox("cT stage:", options=list(T_options.keys()), format_func=lambda x: T_options[x])
-SINIT = st.selectbox("SINIT:", options=list(SINIT_options.keys()), format_func=lambda x: SINIT_options[x])
 
-# 预测逻辑
+# 注意：这里的顺序必须与模型训练时完全一致！
+feature_names = ['SINIT', 'T', 'N', 'SIZE']  # 关键修改：调整顺序
+
+# 输入控件
+SIZE = st.number_input("Tumor size (cm)", min_value=0.1, max_value=10.0, value=1.0, step=0.1)
+N = st.selectbox("Lymph node status", options=[0, 1], 
+                format_func=lambda x: 'Negative (0)' if x == 0 else 'Positive (1)')
+T = st.selectbox("T stage", options=[1, 2, 3, 4],
+                format_func=lambda x: f"cT{x} ({x})")
+SINIT = st.selectbox("SINIT classification", options=[1, 2, 3],
+                    format_func=lambda x: f"SINIT{x} ({x})")
+
+# --- 3. 预测逻辑（修正特征顺序）---
 if st.button("Predict"):
     try:
-        # 转换为 DataFrame 确保格式匹配
-        features = pd.DataFrame([[SINIT, N, T, SIZE]], columns=feature_names)
-        predicted_class = model.predict(features)[0]
-        predicted_proba = model.predict_proba(features)[0]
+        # 按模型期望的顺序准备数据
+        input_data = pd.DataFrame([[SINIT, T, N, SIZE]], 
+                                columns=feature_names)
+        
+        # 预测结果
+        prediction = model.predict(input_data)[0]
+        proba = model.predict_proba(input_data)[0]
         
         # 显示结果
-        st.write(f"**Predicted Class:** {predicted_class}")
-        st.write(f"**Probability:** {predicted_proba[predicted_class]:.1%}")
+        st.success(f"预测结果: {'高风险' if prediction == 1 else '低风险'}")
+        st.write(f"概率分布: 低风险 {proba[0]:.1%} | 高风险 {proba[1]:.1%}")
         
-        # SHAP 可视化（改用 summary_plot 更稳定）
+        # --- 4. 改进的SHAP可视化 ---
+        st.subheader("特征重要性分析")
+        
         explainer = shap.TreeExplainer(model)
-        shap_values = explainer.shap_values(features)
+        shap_values = explainer.shap_values(input_data)
         
-        st.subheader("Feature Importance (SHAP)")
-        fig, ax = plt.subplots()
-        shap.summary_plot(shap_values, features, plot_type="bar", show=False)
-        st.pyplot(fig)
+        # 方法1：使用柱状图（最稳定）
+        fig1, ax1 = plt.subplots()
+        shap.summary_plot(shap_values, input_data, plot_type="bar", show=False)
+        st.pyplot(fig1)
+        
+        # 方法2：瀑布图（需要shap>=0.44）
+        st.write("单个预测解释:")
+        fig2, ax2 = plt.subplots()
+        shap.plots.waterfall(shap.Explanation(values=shap_values[0], 
+                                             base_values=explainer.expected_value,
+                                             data=input_data.iloc[0]))
+        st.pyplot(fig2)
         
     except Exception as e:
-        st.error(f"Error: {str(e)}")
-
+        st.error(f"预测失败: {str(e)}")
+        st.write("常见问题排查：")
+        st.write("1. 请确认模型文件(XGBoost.pkl)已上传")
+        st.write("2. 检查输入值是否在有效范围内")
