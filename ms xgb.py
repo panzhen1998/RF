@@ -115,6 +115,9 @@ joblib.dump(best_model, 'XGBoost.pkl')
 # In[11]:
 
 
+#!/usr/bin/env python
+# coding: utf-8
+
 import streamlit as st
 import joblib
 import pandas as pd
@@ -122,65 +125,85 @@ import shap
 import matplotlib.pyplot as plt
 import os
 
-# --- 1. 确保模型加载正确 ---
+# --- 1. Model Loading ---
 try:
     model_path = os.path.join(os.path.dirname(__file__), 'XGBoost.pkl')
     model = joblib.load(model_path)
 except Exception as e:
-    st.error(f"模型加载失败: {str(e)}")
+    st.error(f"Model loading failed: {str(e)}")
     st.stop()
 
-# --- 2. 定义界面元素（保持与训练时相同的特征顺序）---
-st.title("LARC Disease Predictor")
+# --- 2. Interface Elements (English Only) ---
+st.title("LARC Early Recurrence Predictor")
 
-# 注意：这里的顺序必须与模型训练时完全一致！
-feature_names = ['SINIT', 'T', 'N', 'SIZE']  # 关键修改：调整顺序
+# Define feature names in EXACTLY the same order as during training
+feature_names = ['SINIT', 'T', 'N', 'SIZE']  # Critical: Must match training order
 
-# 输入控件
-SIZE = st.number_input("Tumor size (cm)", min_value=0.1, max_value=10.0, value=1.0, step=0.1)
-N = st.selectbox("Lymph node status", options=[0, 1], 
-                format_func=lambda x: 'Negative (0)' if x == 0 else 'Positive (1)')
-T = st.selectbox("T stage", options=[1, 2, 3, 4],
-                format_func=lambda x: f"cT{x} ({x})")
-SINIT = st.selectbox("SINIT classification", options=[1, 2, 3],
-                    format_func=lambda x: f"SINIT{x} ({x})")
+# Input widgets with English labels
+tumor_size = st.number_input("Tumor Size (cm)", 
+                           min_value=0.1, 
+                           max_value=10.0, 
+                           value=1.0, 
+                           step=0.1,
+                           help="Diameter of the primary tumor")
 
-# --- 3. 预测逻辑（修正特征顺序）---
-if st.button("Predict"):
+n_status = st.selectbox("Lymph Node Status (cN)", 
+                       options=[0, 1], 
+                       format_func=lambda x: 'Negative (0)' if x == 0 else 'Positive (1)',
+                       help="Presence of lymph node metastasis")
+
+t_stage = st.selectbox("T Stage (cT)", 
+                      options=[1, 2, 3, 4],
+                      format_func=lambda x: f"cT{x}",
+                      help="Tumor depth and local invasion")
+
+sinit_class = st.selectbox("SINIT Classification", 
+                         options=[1, 2, 3],
+                         format_func=lambda x: f"SINIT{x}",
+                         help="Tumor regression grading system")
+
+# --- 3. Prediction Logic ---
+if st.button("Predict Recurrence Risk"):
     try:
-        # 按模型期望的顺序准备数据
-        input_data = pd.DataFrame([[SINIT, T, N, SIZE]], 
+        # Prepare input data in correct order
+        input_data = pd.DataFrame([[sinit_class, t_stage, n_status, tumor_size]], 
                                 columns=feature_names)
         
-        # 预测结果
+        # Make prediction
         prediction = model.predict(input_data)[0]
-        proba = model.predict_proba(input_data)[0]
+        probabilities = model.predict_proba(input_data)[0]
         
-        # 显示结果
-        st.success(f"预测结果: {'高风险' if prediction == 1 else '低风险'}")
-        st.write(f"概率分布: 低风险 {proba[0]:.1%} | 高风险 {proba[1]:.1%}")
+        # Display results
+        if prediction == 1:
+            st.error(f"🔴 High Risk of Early Recurrence: {probabilities[1]:.1%}")
+            st.warning("Clinical recommendation: Consider adjuvant therapy and close monitoring")
+        else:
+            st.success(f"🟢 Low Risk of Early Recurrence: {probabilities[0]:.1%}")
+            st.info("Clinical recommendation: Standard follow-up protocol")
         
-        # --- 4. 改进的SHAP可视化 ---
-        st.subheader("特征重要性分析")
-        
-        explainer = shap.TreeExplainer(model)
-        shap_values = explainer.shap_values(input_data)
-        
-        # 方法1：使用柱状图（最稳定）
-        fig1, ax1 = plt.subplots()
-        shap.summary_plot(shap_values, input_data, plot_type="bar", show=False)
-        st.pyplot(fig1)
-        
-        # 方法2：瀑布图（需要shap>=0.44）
-        st.write("单个预测解释:")
-        fig2, ax2 = plt.subplots()
-        shap.plots.waterfall(shap.Explanation(values=shap_values[0], 
-                                             base_values=explainer.expected_value,
-                                             data=input_data.iloc[0]))
-        st.pyplot(fig2)
-        
+        # --- 4. SHAP Explanation ---
+        with st.expander("Explain this prediction"):
+            explainer = shap.TreeExplainer(model)
+            shap_values = explainer.shap_values(input_data)
+            
+            st.subheader("Feature Importance")
+            fig1, ax1 = plt.subplots()
+            shap.summary_plot(shap_values, input_data, plot_type="bar", show=False)
+            st.pyplot(fig1)
+            
+            st.subheader("Prediction Breakdown")
+            fig2, ax2 = plt.subplots()
+            shap.plots.waterfall(shap.Explanation(
+                values=shap_values[0], 
+                base_values=explainer.expected_value,
+                feature_names=feature_names,
+                data=input_data.iloc[0]))
+            st.pyplot(fig2)
+            
     except Exception as e:
-        st.error(f"预测失败: {str(e)}")
-        st.write("常见问题排查：")
-        st.write("1. 请确认模型文件(XGBoost.pkl)已上传")
-        st.write("2. 检查输入值是否在有效范围内")
+        st.error("Prediction failed. Please check:")
+        st.write(f"Technical details: {str(e)}")
+        st.write("Common fixes:")
+        st.write("1. Ensure all fields are completed")
+        st.write("2. Verify model file exists")
+        st.write("3. Check value ranges (especially tumor size)")
