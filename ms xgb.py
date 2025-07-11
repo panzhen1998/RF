@@ -157,16 +157,16 @@ t_stage = st.selectbox("T Stage (cT)",
                       format_func=lambda x: f"cT{x}",
                       help="Tumor depth and local invasion")
 
-sinit_class = st.selectbox("SINIT Classification", 
+sinti_class = st.selectbox("SINTI Classification", 
                          options=[1, 2, 3],
-                         format_func=lambda x: f"SINIT{x}",
+                         format_func=lambda x: f"SINTI{x}",
                          help="Tumor regression grading system")
 
 # --- 3. Prediction Logic ---
 if st.button("Predict Recurrence Risk"):
     try:
         # Prepare input data in correct order
-        input_data = pd.DataFrame([[sinit_class, t_stage, n_status, tumor_size]], 
+        input_data = pd.DataFrame([[sinti_class, t_stage, n_status, tumor_size]], 
                                 columns=feature_names)
         
         # Make prediction
