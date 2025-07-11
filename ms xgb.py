@@ -137,7 +137,7 @@ except Exception as e:
 st.title("LARC Early Recurrence Predictor")
 
 # Define feature names in EXACTLY the same order as during training
-feature_names = ['SINIT', 'T', 'N', 'SIZE']  # Critical: Must match training order
+feature_names = ['SINTI', 'T', 'N', 'SIZE']  # Critical: Must match training order
 
 # Input widgets with English labels
 tumor_size = st.number_input("Tumor Size (cm)", 
